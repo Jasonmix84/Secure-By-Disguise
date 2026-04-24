@@ -1,14 +1,10 @@
-import sys, random, os
+import random, os
 import argparse
-import pickle
-import imageio.v2 as imageio
 import numpy as np
 from cryp import RMT, AES
 from Neuracrypt import NeuraCrypt
 from PIL import Image
 from tqdm import tqdm
-from torchvision import datasets
-import time
 
 
 def save_image_from_array(img_array, save_path):
@@ -278,6 +274,7 @@ class ImageDisguisingApp:
                 return bytes(reconstructed), hits, total_checks
 
             # Build codebook from known pairs
+            known_indices_set = set(index)  # Convert to set for O(1) lookup
             codebook_pairs = []
             for idx in index:
                 enc_img = self.encrypted_images[idx]
@@ -299,6 +296,8 @@ class ImageDisguisingApp:
 
             total_hits = 0
             total_checks = 0
+            unknown_hits = 0
+            unknown_checks = 0
 
             for i in tqdm(range(len(self.encrypted_images)), desc="Attacking Images (AES Codebook)"):
                 enc_img = self.encrypted_images[i]
@@ -306,6 +305,11 @@ class ImageDisguisingApp:
                 rec_bytes, hits, checks = codebook_attack(codebook, enc_bytes)
                 total_hits += hits
                 total_checks += checks
+                
+                # Track hits separately for unknown images
+                if i not in known_indices_set:
+                    unknown_hits += hits
+                    unknown_checks += checks
                 
                 recover = np.frombuffer(rec_bytes, dtype=np.uint8).reshape(enc_img.shape)
                 rec.append(recover)
@@ -335,7 +339,9 @@ class ImageDisguisingApp:
                 print(f"Saved recovered image: {recovered_path}")
 
             overall_hit_rate = (total_hits / total_checks * 100) if total_checks > 0 else 0
+            unknown_hit_rate = (unknown_hits / unknown_checks * 100) if unknown_checks > 0 else 0
             print(f"\nOverall Codebook Hit Rate: {overall_hit_rate:.2f}% ({total_hits}/{total_checks})")
+            print(f"Unknown Images Hit Rate: {unknown_hit_rate:.2f}% ({unknown_hits}/{unknown_checks})")
             
             # Write hit rate to file in current directory
             stats_file = "attack_stats.txt"
@@ -344,6 +350,9 @@ class ImageDisguisingApp:
                 f.write(f"Overall Codebook Hit Rate: {overall_hit_rate:.2f}%\n")
                 f.write(f"Total Hits: {total_hits}\n")
                 f.write(f"Total Checks: {total_checks}\n")
+                f.write(f"Unknown Images Hit Rate: {unknown_hit_rate:.2f}%\n")
+                f.write(f"Unknown Hits: {unknown_hits}\n")
+                f.write(f"Unknown Checks: {unknown_checks}\n")
             print(f"Attack statistics saved to {stats_file}")
             
             print("AES Codebook Attack done!")
@@ -351,8 +360,7 @@ class ImageDisguisingApp:
         else:
             raise NotImplementedError("Attack is implemented for RMT/AES only.")
         
-
-    
+        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
